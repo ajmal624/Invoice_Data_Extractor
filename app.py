@@ -23,6 +23,8 @@ openai.api_key = OPENAI_API_KEY
 if not OPENAI_API_KEY or not OPENAI_API_KEY.startswith("sk-"):
     st.error("❌ Missing or invalid OpenAI API key in Streamlit secrets.")
     st.stop()
+
+# Initialize the OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ========= STREAMLIT UI =========
@@ -289,6 +291,7 @@ if uploaded_file:
         except Exception as e:
 
             st.error(f"❌ Error: {e}")
+
 
 
 
