@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 # ========= CONFIG =========
 load_dotenv()
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
+OPENAI_API_KEY = st.secrets("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     st.error("❌ OPENAI_API_KEY not found in .env file")
     st.stop()
@@ -284,4 +284,5 @@ if uploaded_file:
         except Exception as e:
 
             st.error(f"❌ Error: {e}")
+
 
