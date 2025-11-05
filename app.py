@@ -7,7 +7,6 @@ import streamlit as st
 import pandas as pd
 import zipfile
 from dotenv import load_dotenv
-import OpenAI
 from io import BytesIO
 from PIL import Image
 from datetime import datetime, timedelta
@@ -290,6 +289,7 @@ if uploaded_file:
         except Exception as e:
 
             st.error(f"❌ Error: {e}")
+
 
 
 
