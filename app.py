@@ -7,24 +7,17 @@ import streamlit as st
 import pandas as pd
 import zipfile
 from dotenv import load_dotenv
+from openai import OpenAI
 from io import BytesIO
 from PIL import Image
 from datetime import datetime, timedelta
-from openai import OpenAI
 
 # ========= CONFIG =========
 load_dotenv()
-
-# ✅ Load OpenAI API key from Streamlit Secrets
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-OpenAI.api_key = OPENAI_API_KEY
-
-# Optional: validate key
-if not OPENAI_API_KEY or not OPENAI_API_KEY.startswith("sk-"):
-    st.error("❌ Missing or invalid OpenAI API key in Streamlit secrets.")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    st.error("❌ OPENAI_API_KEY not found in .env file")
     st.stop()
-
-# Initialize the OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ========= STREAMLIT UI =========
@@ -228,7 +221,7 @@ if uploaded_file:
         try:
             image_entries = [{"type": "image_url", "image_url": {"url": encode_image_b64(img)}} for img in images]
             with st.spinner("🧠 Extracting data..."):
-                response = openai.ChatCompletion.create(
+                response = client.chat.completions.create(
                     model="gpt-4.1-mini",
                     temperature=0,
                     messages=[
@@ -237,7 +230,7 @@ if uploaded_file:
                     ],
                 )
 
-            raw_output = response["choices"][0]["message"]["content"]
+            raw_output = response.choices[0].message.content
             parsed = clean_json_output(raw_output)
             st.session_state["parsed_data"] = parsed
             df_summary, items_df = separate_summary_and_items(parsed)
@@ -289,16 +282,4 @@ if uploaded_file:
                 st.download_button("🗜️ Download ZIP (PDF + Custom Excel)", zip_buffer2, f"{pdf_filename.split('.')[0]}_custom_bundle.zip", mime="application/zip")
 
         except Exception as e:
-
             st.error(f"❌ Error: {e}")
-
-
-
-
-
-
-
-
-
-
-
