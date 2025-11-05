@@ -33,3 +33,7 @@ A powerful **Streamlit-based invoice data extraction tool** that reads PDF invoi
 ```bash
 git clone https://github.com/<your-username>/invoice-data-extractor.git
 cd invoice-data-extractor
+# 4️⃣ Add your OpenAI API key securely
+Go to Streamlit Cloud > App Settings > Secrets > Add:
+
+OPENAI_API_KEY = "your_openai_api_key_here"
