@@ -3,5 +3,5 @@ pandas
 PyMuPDF
 Pillow
 python-dotenv
-openai
+openai>=1.42.0
 openpyxl
