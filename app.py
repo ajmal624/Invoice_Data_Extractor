@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from io import BytesIO
 from PIL import Image
 from datetime import datetime, timedelta
-from openai import OpenAI
+import openai
 
 # ========= CONFIG =========
 load_dotenv()
@@ -289,6 +289,7 @@ if uploaded_file:
         except Exception as e:
 
             st.error(f"❌ Error: {e}")
+
 
 
 
