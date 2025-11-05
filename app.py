@@ -17,7 +17,7 @@ load_dotenv()
 
 # ✅ Load OpenAI API key from Streamlit Secrets
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-openai.api_key = OPENAI_API_KEY
+OpenAI.api_key = OPENAI_API_KEY
 
 # Optional: validate key
 if not OPENAI_API_KEY or not OPENAI_API_KEY.startswith("sk-"):
@@ -291,6 +291,7 @@ if uploaded_file:
         except Exception as e:
 
             st.error(f"❌ Error: {e}")
+
 
 
 
