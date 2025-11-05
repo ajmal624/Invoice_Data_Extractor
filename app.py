@@ -6,18 +6,13 @@ import fitz  # PyMuPDF
 import streamlit as st
 import pandas as pd
 import zipfile
-from dotenv import load_dotenv
 from openai import OpenAI
 from io import BytesIO
 from PIL import Image
 from datetime import datetime, timedelta
 
 # ========= CONFIG =========
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    st.error("❌ OPENAI_API_KEY not found in .env file")
-    st.stop()
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ========= STREAMLIT UI =========
@@ -283,3 +278,4 @@ if uploaded_file:
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
+
