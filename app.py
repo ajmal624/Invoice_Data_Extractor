@@ -26,9 +26,17 @@ st.set_page_config(page_title="📄 Invoice Data Extractor", layout="wide")
 st.title("📄 Invoice Data Extractor")
 
 # ================= SESSION STATE =================
-for key in ["sub_prompt", "parsed_data", "df_summary", "show_sub_prompt", "last_pdf_name"]:
+for key in [
+    "sub_prompt",
+    "parsed_data",
+    "df_summary",
+    "show_sub_prompt",
+    "last_pdf_name",
+    "last_excel_name",
+]:
     if key not in st.session_state:
         st.session_state[key] = None if key not in ["show_sub_prompt"] else False
+
 
 # ================= FILE UPLOAD =================
 col1, col2 = st.columns(2)
@@ -37,14 +45,24 @@ with col1:
 with col2:
     uploaded_template = st.file_uploader("📋 Upload Excel Template", type=["xlsx"], key="excel_upload")
 
+
 # ================= FILE CHANGE DETECTION =================
-if uploaded_pdf:
-    current_pdf_name = uploaded_pdf.name
-    if st.session_state.last_pdf_name != current_pdf_name:
+if uploaded_pdf or uploaded_template:
+    current_pdf_name = uploaded_pdf.name if uploaded_pdf else st.session_state.last_pdf_name
+    current_excel_name = uploaded_template.name if uploaded_template else st.session_state.last_excel_name
+
+    # Reset states when PDF or Excel template changes
+    if (
+        st.session_state.last_pdf_name != current_pdf_name
+        or st.session_state.last_excel_name != current_excel_name
+    ):
         st.session_state.parsed_data = None
         st.session_state.df_summary = None
         st.session_state.show_sub_prompt = False
+        st.session_state.sub_prompt = None
         st.session_state.last_pdf_name = current_pdf_name
+        st.session_state.last_excel_name = current_excel_name
+
 
 # ================= HELPERS =================
 def pdf_to_images(pdf_bytes, dpi=250):
@@ -56,6 +74,7 @@ def pdf_to_images(pdf_bytes, dpi=250):
         imgs.append(img)
     pdf_doc.close()
     return imgs
+
 
 def clean_json_output(raw_text):
     if not raw_text:
@@ -77,13 +96,16 @@ def clean_json_output(raw_text):
         except Exception as e2:
             return {"error": f"JSON parse failed: {e2}", "raw": text}
 
+
 def expand_addresses(df):
     if "Service Address" in df.columns:
         df = df.explode("Service Address")
     return df
 
+
 def normalize_none_values(df):
     return df.fillna("Not Found").replace("", "Not Found")
+
 
 def remove_duplicate_columns(df):
     seen = {}
@@ -101,6 +123,7 @@ def remove_duplicate_columns(df):
     clean_df = pd.DataFrame({c: seen[c] for c in cols_to_keep})
     return clean_df
 
+
 def add_serial_numbers(df, template_cols):
     serial_values = list(range(1, len(df) + 1))
     if "S.No" in df.columns:
@@ -116,12 +139,14 @@ def add_serial_numbers(df, template_cols):
         df = df[["S.No"] + [c for c in df.columns if c != "S.No"]]
     return df
 
+
 def make_excel(df):
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Extracted_Data")
     buf.seek(0)
     return buf
+
 
 def make_zip(pdf_bytes, excel_bytes, pdf_name, excel_name):
     buf = BytesIO()
@@ -130,6 +155,7 @@ def make_zip(pdf_bytes, excel_bytes, pdf_name, excel_name):
         z.writestr(excel_name, excel_bytes.getvalue())
     buf.seek(0)
     return buf
+
 
 # ================= MAIN PROCESS =================
 if uploaded_pdf and uploaded_template:
@@ -166,80 +192,30 @@ if uploaded_pdf and uploaded_template:
         df_template = pd.read_excel(uploaded_template)
         st.dataframe(df_template.head())
 
-    # ================= SUB PROMPT SECTION =================
-    if not st.session_state.show_sub_prompt:
-        if st.button("🔍 Generate Sub Prompt from Template", key="generate_subprompt"):
-            st.session_state.show_sub_prompt = True
-
-    if st.session_state.show_sub_prompt:
-        st.subheader("🧩 Sub Prompt (JSON Extraction Structure)")
-
-        if st.session_state.sub_prompt is None:
-            st.session_state.sub_prompt = """
-{
-  "S.No": i,
-  "Memo #": "",
-  "Vendor Name": "<payable_to>",
-  "Service Address": "<sites: [{address}]>",
-  "Inv #": "<invoice_number>",
-  "Inv Date": "<invoice_date>",
-  "Due Date": "<due_date>",
-  "Amt": "<invoice_total_amount>"
-}
-Return only valid JSON.
-Ensure "S.No" starts at 1 and increments sequentially.
-"""
-
-        # Sub Prompt Text Box
-        st.session_state.sub_prompt = st.text_area(
-            "Edit or regenerate this JSON structure:",
-            st.session_state.sub_prompt,
-            height=260,
-            key="sub_prompt_area"
+    # ================= AUTO GENERATE SUB PROMPT (HIDDEN) =================
+    if not st.session_state.sub_prompt:
+        columns = list(df_template.columns)
+        field_map = {
+            "Memo #": "",
+            "Vendor Name": "<payable_to>",
+            "Service Address": "<sites: [{address}]>",
+            "Inv #": "<invoice_number>",
+            "Inv Date": "<invoice_date>",
+            "Due Date": "<due_date>",
+            "Amt": "<invoice_total_amount>",
+        }
+        json_obj = {"S.No": "i"}
+        for col in columns:
+            json_obj[col] = field_map.get(col, "")
+        json_obj_text = json.dumps(json_obj, indent=2)
+        st.session_state.sub_prompt = (
+            f"{json_obj_text}\nReturn only valid JSON.\nEnsure 'S.No' starts at 1 and increments sequentially."
         )
 
-        # Lower-right aligned "Regenerate" button using CSS
-        st.markdown(
-            """
-            <style>
-            div[data-testid="stHorizontalBlock"] > div:nth-child(2) button {
-                float: right !important;
-                margin-top: -45px;
-                background-color: #4CAF50 !important;
-                color: white !important;
-                border-radius: 8px;
-                border: none;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-
-        regen_col1, regen_col2 = st.columns([0.7, 0.3])
-        with regen_col2:
-            if st.button("🔄 Regenerate Sub Prompt using Gemini", key="regen_prompt"):
-                with st.spinner("Generating sub prompt dynamically using Gemini..."):
-                    main_prompt = f"""
-You are a professional invoice data extraction assistant.
-Analyze the invoice and the following Excel template columns:
-{list(df_template.columns)}
-
-Generate a JSON extraction structure suitable for this template.
-Ensure "S.No" starts at 1 and increments sequentially.
-
-Example:
-{st.session_state.sub_prompt}
-
-Return only valid JSON — no markdown or explanations.
-"""
-                    model = genai.GenerativeModel(MODEL_NAME)
-                    response = model.generate_content(main_prompt)
-                    st.session_state.sub_prompt = response.text.strip()
-                    st.success("✅ Sub prompt updated dynamically based on Excel template!")
-
-        if st.button("⚙️ Extract Template Mapping", key="extract_btn"):
-            with st.spinner("Extracting structured data using Gemini..."):
-                extraction_prompt = f"""
+    # Hidden but functional extraction button
+    if st.button("⚙️ Extract Template Mapping", key="extract_btn"):
+        with st.spinner("Extracting structured data using Gemini..."):
+            extraction_prompt = f"""
 Use this JSON structure to extract all data from the invoice images and map it to the Excel template fields.
 
 {st.session_state.sub_prompt}
@@ -248,56 +224,55 @@ Ensure:
 - "S.No" starts from 1 and increments by 1.
 - Return only valid JSON — no markdown or explanations.
 """
-                model = genai.GenerativeModel(MODEL_NAME)
-                response2 = model.generate_content([extraction_prompt] + [img for img in pdf_images])
-                raw_out = response2.text
-                parsed = clean_json_output(raw_out)
-                st.session_state.parsed_data = parsed
+            model = genai.GenerativeModel(MODEL_NAME)
+            response2 = model.generate_content([extraction_prompt] + [img for img in pdf_images])
+            raw_out = response2.text
+            parsed = clean_json_output(raw_out)
+            st.session_state.parsed_data = parsed
 
-            data = parsed.get("data") if isinstance(parsed, dict) and "data" in parsed else parsed
-            if not data or isinstance(data, dict):
-                df = pd.DataFrame([data])
-            else:
-                df = pd.DataFrame(data)
+        data = parsed.get("data") if isinstance(parsed, dict) and "data" in parsed else parsed
+        if not data or isinstance(data, dict):
+            df = pd.DataFrame([data])
+        else:
+            df = pd.DataFrame(data)
 
-            all_template_cols = list(df_template.columns)
-            for col in all_template_cols:
-                if col not in df.columns:
-                    df[col] = "Not Found"
+        all_template_cols = list(df_template.columns)
+        for col in all_template_cols:
+            if col not in df.columns:
+                df[col] = "Not Found"
 
-            df = remove_duplicate_columns(df)
-            df = add_serial_numbers(df, all_template_cols)
-            df = normalize_none_values(df)
-            df = expand_addresses(df)
+        df = remove_duplicate_columns(df)
+        df = add_serial_numbers(df, all_template_cols)
+        df = normalize_none_values(df)
+        df = expand_addresses(df)
 
-            st.session_state.df_summary = df
+        st.session_state.df_summary = df
 
-        # ================= SHOW OUTPUT WITHOUT REFRESH =================
-        if st.session_state.df_summary is not None:
-            st.subheader("📋 Extracted Data (Template Mapping)")
-            st.dataframe(st.session_state.df_summary, use_container_width=True)
+    # ================= SHOW OUTPUT =================
+    if st.session_state.df_summary is not None:
+        st.subheader("📋 Extracted Data (Template Mapping)")
+        st.dataframe(st.session_state.df_summary, use_container_width=True)
 
-            excel_bytes = make_excel(st.session_state.df_summary)
-            zip_buf = make_zip(pdf_bytes, excel_bytes, pdf_name, f"{pdf_name.split('.')[0]}_mapped.xlsx")
+        excel_bytes = make_excel(st.session_state.df_summary)
+        zip_buf = make_zip(pdf_bytes, excel_bytes, pdf_name, f"{pdf_name.split('.')[0]}_mapped.xlsx")
 
-            st.download_button(
-                "⬇️ Download Excel (Template Mapping)",
-                data=excel_bytes,
-                file_name=f"{pdf_name.split('.')[0]}_template_mapping.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_excel",
-                use_container_width=True
-            )
+        st.download_button(
+            "⬇️ Download Excel (Template Mapping)",
+            data=excel_bytes,
+            file_name=f"{pdf_name.split('.')[0]}_template_mapping.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_excel",
+            use_container_width=True,
+        )
 
-            st.download_button(
-                "📦 Download ZIP (PDF + Excel)",
-                data=zip_buf,
-                file_name=f"{pdf_name.split('.')[0]}_template_bundle.zip",
-                mime="application/zip",
-                key="download_zip",
-                use_container_width=True
-            )
+        st.download_button(
+            "📦 Download ZIP (PDF + Excel)",
+            data=zip_buf,
+            file_name=f"{pdf_name.split('.')[0]}_template_bundle.zip",
+            mime="application/zip",
+            key="download_zip",
+            use_container_width=True,
+        )
 
 else:
     st.info("⬆️ Please upload both the PDF and Excel template to begin.")
-
