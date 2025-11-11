@@ -9,21 +9,23 @@ import pandas as pd
 import streamlit as st
 from io import BytesIO
 from PIL import Image
+from dotenv import load_dotenv
 import google.generativeai as genai  # pyright: ignore[reportMissingImports]
 
-# ================= STREAMLIT CONFIG =================
-st.set_page_config(page_title="📄 Invoice Data Extractor", layout="wide")
-st.title("📄 Invoice Data Extractor")
+# ================= CONFIG =================
+load_dotenv()
 
-# ================= GEMINI CONFIG =================
-try:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-except KeyError:
-    st.error("❌ Missing Gemini API Key in Streamlit secrets. Please set it under `[secrets] GEMINI_API_KEY='your_key_here'`.")
+# Load API key from secrets if available
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
+if not GEMINI_API_KEY:
+    st.error("❌ Missing Gemini API Key. Please set GEMINI_API_KEY in secrets or .env file.")
     st.stop()
 
 genai.configure(api_key=GEMINI_API_KEY)
 MODEL_NAME = "gemini-2.5-flash"
+
+st.set_page_config(page_title="📄 Invoice Data Extractor", layout="wide")
+st.title("📄 Invoice Data Extractor")
 
 # ================= SESSION STATE =================
 for key in ["sub_prompt", "parsed_data", "df_summary", "show_sub_prompt", "last_pdf_name"]:
@@ -41,12 +43,13 @@ with col2:
 if uploaded_pdf:
     current_pdf_name = uploaded_pdf.name
     if st.session_state.last_pdf_name != current_pdf_name:
+        # New PDF uploaded — reset extracted data
         st.session_state.parsed_data = None
         st.session_state.df_summary = None
         st.session_state.show_sub_prompt = False
         st.session_state.last_pdf_name = current_pdf_name
 
-# ================= HELPER FUNCTIONS =================
+# ================= HELPERS =================
 def pdf_to_images(pdf_bytes, dpi=250):
     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     imgs = []
@@ -107,6 +110,7 @@ def add_serial_numbers(df, template_cols):
         df["S.No"] = serial_values
     else:
         df.insert(0, "S.No", serial_values)
+
     if "S.No" in template_cols:
         ordered_cols = [c for c in template_cols if c in df.columns]
         missing_cols = [c for c in df.columns if c not in ordered_cols]
@@ -165,14 +169,37 @@ if uploaded_pdf and uploaded_template:
         df_template = pd.read_excel(uploaded_template)
         st.dataframe(df_template.head())
 
-    # ================= SUB PROMPT =================
+    # ================= SUB PROMPT SECTION =================
     if not st.session_state.show_sub_prompt:
         if st.button("🔍 Generate Sub Prompt from Template", key="generate_subprompt"):
             st.session_state.show_sub_prompt = True
 
     if st.session_state.show_sub_prompt:
-        st.subheader("🧩 Sub Prompt (JSON Extraction Structure)")
+        # ---- Header with right-aligned regenerate button ----
+        col_left, col_right = st.columns([8, 2])
+        with col_left:
+            st.subheader("🧩 Sub Prompt (JSON Extraction Structure)")
+        with col_right:
+            if st.button("🔄 Regenerate using Gemini", key="regen_prompt", use_container_width=True):
+                with st.spinner("Generating sub prompt dynamically using Gemini..."):
+                    model = genai.GenerativeModel(MODEL_NAME)
+                    main_prompt = f"""
+You are a professional invoice data extraction assistant.
+Analyze the invoice and the following Excel template columns:
+{list(df_template.columns)}
 
+Generate a JSON extraction structure suitable for this template.
+Ensure "S.No" starts at 1 and increments sequentially.
+
+Example:
+{st.session_state.sub_prompt or ""}
+Return only valid JSON — no markdown or explanations.
+"""
+                    response = model.generate_content(main_prompt)
+                    st.session_state.sub_prompt = response.text.strip()
+                    st.success("✅ Sub prompt updated dynamically based on Excel template!")
+
+        # ---- Sub prompt text area ----
         if st.session_state.sub_prompt is None:
             st.session_state.sub_prompt = """
 {
@@ -196,27 +223,7 @@ Ensure "S.No" starts at 1 and increments sequentially.
             key="sub_prompt_area"
         )
 
-        main_prompt = f"""
-You are a professional invoice data extraction assistant.
-Analyze the invoice and the following Excel template columns:
-{list(df_template.columns)}
-
-Generate a JSON extraction structure suitable for this template.
-Ensure "S.No" starts at 1 and increments sequentially.
-
-Example:
-{st.session_state.sub_prompt}
-
-Return only valid JSON — no markdown or explanations.
-"""
-
-        if st.button("🔄 Regenerate Sub Prompt using Gemini", key="regen_prompt"):
-            with st.spinner("Generating sub prompt dynamically using Gemini..."):
-                model = genai.GenerativeModel(MODEL_NAME)
-                response = model.generate_content(main_prompt)
-                st.session_state.sub_prompt = response.text.strip()
-                st.success("✅ Sub prompt updated dynamically based on Excel template!")
-
+        # ---- Extraction process ----
         if st.button("⚙️ Extract Template Mapping", key="extract_btn"):
             with st.spinner("Extracting structured data using Gemini..."):
                 extraction_prompt = f"""
@@ -249,6 +256,7 @@ Ensure:
             df = add_serial_numbers(df, all_template_cols)
             df = normalize_none_values(df)
             df = expand_addresses(df)
+
             st.session_state.df_summary = df
 
         # ================= SHOW OUTPUT =================
@@ -276,5 +284,6 @@ Ensure:
                 key="download_zip",
                 use_container_width=True
             )
+
 else:
     st.info("⬆️ Please upload both the PDF and Excel template to begin.")
