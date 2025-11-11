@@ -1,7 +1,6 @@
 streamlit
 pandas
-python-dotenv
-openai>=1.12.0
+PyMuPDF
 Pillow
-pymupdf
 openpyxl
+google-generativeai
