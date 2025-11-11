@@ -12,18 +12,17 @@ from PIL import Image
 from dotenv import load_dotenv
 import google.generativeai as genai  # pyright: ignore[reportMissingImports]
 
-# ================= CONFIG =================
-load_dotenv()
-
-# Load API key from secrets if available
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
-if not GEMINI_API_KEY:
-    st.error("❌ Missing Gemini API Key. Please set GEMINI_API_KEY in secrets or .env file.")
+# ================= GEMINI CONFIG =================
+try:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+except KeyError:
+    st.error("❌ Missing Gemini API Key in Streamlit secrets. Please set it under `[secrets] GEMINI_API_KEY='your_key_here'`.")
     st.stop()
 
 genai.configure(api_key=GEMINI_API_KEY)
 MODEL_NAME = "gemini-2.5-flash"
 
+# ================= STREAMLIT CONFIG =================
 st.set_page_config(page_title="📄 Invoice Data Extractor", layout="wide")
 st.title("📄 Invoice Data Extractor")
 
@@ -43,7 +42,6 @@ with col2:
 if uploaded_pdf:
     current_pdf_name = uploaded_pdf.name
     if st.session_state.last_pdf_name != current_pdf_name:
-        # New PDF uploaded — reset extracted data
         st.session_state.parsed_data = None
         st.session_state.df_summary = None
         st.session_state.show_sub_prompt = False
@@ -175,31 +173,8 @@ if uploaded_pdf and uploaded_template:
             st.session_state.show_sub_prompt = True
 
     if st.session_state.show_sub_prompt:
-        # ---- Header with right-aligned regenerate button ----
-        col_left, col_right = st.columns([8, 2])
-        with col_left:
-            st.subheader("🧩 Sub Prompt (JSON Extraction Structure)")
-        with col_right:
-            if st.button("🔄 Regenerate using Gemini", key="regen_prompt", use_container_width=True):
-                with st.spinner("Generating sub prompt dynamically using Gemini..."):
-                    model = genai.GenerativeModel(MODEL_NAME)
-                    main_prompt = f"""
-You are a professional invoice data extraction assistant.
-Analyze the invoice and the following Excel template columns:
-{list(df_template.columns)}
+        st.subheader("🧩 Sub Prompt (JSON Extraction Structure)")
 
-Generate a JSON extraction structure suitable for this template.
-Ensure "S.No" starts at 1 and increments sequentially.
-
-Example:
-{st.session_state.sub_prompt or ""}
-Return only valid JSON — no markdown or explanations.
-"""
-                    response = model.generate_content(main_prompt)
-                    st.session_state.sub_prompt = response.text.strip()
-                    st.success("✅ Sub prompt updated dynamically based on Excel template!")
-
-        # ---- Sub prompt text area ----
         if st.session_state.sub_prompt is None:
             st.session_state.sub_prompt = """
 {
@@ -216,6 +191,7 @@ Return only valid JSON.
 Ensure "S.No" starts at 1 and increments sequentially.
 """
 
+        # Sub Prompt Text Box
         st.session_state.sub_prompt = st.text_area(
             "Edit or regenerate this JSON structure:",
             st.session_state.sub_prompt,
@@ -223,7 +199,45 @@ Ensure "S.No" starts at 1 and increments sequentially.
             key="sub_prompt_area"
         )
 
-        # ---- Extraction process ----
+        # Lower-right aligned "Regenerate" button using CSS
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stHorizontalBlock"] > div:nth-child(2) button {
+                float: right !important;
+                margin-top: -45px;
+                background-color: #4CAF50 !important;
+                color: white !important;
+                border-radius: 8px;
+                border: none;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
+        regen_col1, regen_col2 = st.columns([0.7, 0.3])
+        with regen_col2:
+            if st.button("🔄 Regenerate Sub Prompt using Gemini", key="regen_prompt"):
+                with st.spinner("Generating sub prompt dynamically using Gemini..."):
+                    main_prompt = f"""
+You are a professional invoice data extraction assistant.
+Analyze the invoice and the following Excel template columns:
+{list(df_template.columns)}
+
+Generate a JSON extraction structure suitable for this template.
+Ensure "S.No" starts at 1 and increments sequentially.
+
+Example:
+{st.session_state.sub_prompt}
+
+Return only valid JSON — no markdown or explanations.
+"""
+                    model = genai.GenerativeModel(MODEL_NAME)
+                    response = model.generate_content(main_prompt)
+                    st.session_state.sub_prompt = response.text.strip()
+                    st.success("✅ Sub prompt updated dynamically based on Excel template!")
+
         if st.button("⚙️ Extract Template Mapping", key="extract_btn"):
             with st.spinner("Extracting structured data using Gemini..."):
                 extraction_prompt = f"""
@@ -259,7 +273,7 @@ Ensure:
 
             st.session_state.df_summary = df
 
-        # ================= SHOW OUTPUT =================
+        # ================= SHOW OUTPUT WITHOUT REFRESH =================
         if st.session_state.df_summary is not None:
             st.subheader("📋 Extracted Data (Template Mapping)")
             st.dataframe(st.session_state.df_summary, use_container_width=True)
