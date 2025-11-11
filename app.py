@@ -9,7 +9,6 @@ import pandas as pd
 import streamlit as st
 from io import BytesIO
 from PIL import Image
-from dotenv import load_dotenv
 import google.generativeai as genai  # pyright: ignore[reportMissingImports]
 
 # ================= GEMINI CONFIG =================
@@ -301,3 +300,4 @@ Ensure:
 
 else:
     st.info("⬆️ Please upload both the PDF and Excel template to begin.")
+
